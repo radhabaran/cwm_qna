@@ -3,7 +3,7 @@
 import streamlit as st
 from document_processor import extract_text_from_pdfs
 from vectorizer import Vectorizer
-from qdrant_client import QdrantClientManager
+from qdrant_manager import QdrantClientManager
 
 # Initialize components
 vectorizer = Vectorizer()
@@ -18,7 +18,7 @@ if not qdrant.vectors_exist():
     texts = [chunk['text'] for chunk in text_chunks]
     metadata = [chunk['metadata'] for chunk in text_chunks]
     vectors = vectorizer.vectorize(texts)
-    qdrant.add_vectors(vectors, metadata)
+    qdrant.add_vectors(vectors, metadata, texts)
 else:
     st.write("Using existing embeddings from Qdrant.")
 
