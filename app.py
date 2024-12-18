@@ -35,7 +35,7 @@ if st.button("Search"):
             for result in results:
                 st.write(f"**Source:** {result.payload['filename']}, "
                          f"**Page:** {result.payload['page_number']}, "
-                         f"**Text:** {result.payload['text'][:200]}...")  # Display a snippet
+                         f"**Text:** {result.payload['text']}")  # Display a snippet
         else:
             st.write("No relevant results found.")
     else:

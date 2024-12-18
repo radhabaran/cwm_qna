@@ -5,7 +5,7 @@ from config import QDRANT_URL, COLLECTION_NAME
 
 class QdrantClientManager:
     def __init__(self):
-        self.client = QdrantClient(url=QDRANT_URL)
+        self.client = QdrantClient(url=QDRANT_URL, timeout=600)
         self.collection_name = COLLECTION_NAME
         self._create_collection()
 
