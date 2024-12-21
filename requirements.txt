@@ -1,5 +1,8 @@
-streamlit
+openai
+pypdf
+tqdm
 qdrant-client
-PyPDF2
-sentence-transformers
-numpy
+langchain
+langchain-text-splitters
+python-dotenv
+pytest
