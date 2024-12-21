@@ -6,104 +6,44 @@ import pypdf
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from openai import OpenAI
 from tqdm import tqdm
-from config import (
-    PDF_DIRECTORY, 
-    OPENAI_API_KEY, 
-    LOCAL_QDRANT_PATH,
-    CHUNK_SIZE,
-    CHUNK_OVERLAP
-)
-from qdrant_manager import QdrantClientManager
-
-# Configuration constants
-BATCH_SIZE = 8
-TIMEOUT = 600.0
+from qdrant_client import QdrantClient
+from qdrant_client.http import models
 
 class DocumentProcessor:
-    def __init__(self):
-        """Initialize document processor with OpenAI client and QdrantClientManager"""
-        self.openai_client = OpenAI(api_key=OPENAI_API_KEY, timeout=TIMEOUT)
-        self.qdrant_manager = QdrantClientManager(path=LOCAL_QDRANT_PATH)
+    def __init__(self, config):
+        """Initialize document processor with all necessary components"""
+        self.config = config
+        self.openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
+        
+        # Initialize Qdrant client
+        self.qdrant_client = QdrantClient(path=config.LOCAL_QDRANT_PATH)
+        self._setup_collection()
+        
+        # Text splitter for chunking
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=CHUNK_SIZE,
-            chunk_overlap=CHUNK_OVERLAP,
+            chunk_size=config.CHUNK_SIZE,
+            chunk_overlap=config.CHUNK_OVERLAP,
             length_function=len,
             separators=["\n\n", "\n", ".", " ", ""]
         )
 
-    def process_large_file(self, file_path: str) -> Generator[tuple, None, None]:
-        """
-        Generator function to process large PDF files
-        Args:
-            file_path: Path to PDF file
-        Yields:
-            Tuple of (page_number, page_text)
-        """
-        reader = pypdf.PdfReader(file_path)
-        for page_number, page in enumerate(reader.pages):
-            yield page_number, page.extract_text()
-
-    def extract_text_from_pdfs(self, new_files: set) -> List[Dict]:
-        """
-        Extract text from PDFs using pypdf and configured chunk settings
-        Args:
-            new_files: Set of new PDF filenames to process
-        Returns:
-            List of dictionaries containing text chunks and metadata
-        """
-        text_chunks = []
-        
-        for filename in os.listdir(PDF_DIRECTORY):
-            if filename.endswith('.pdf') and filename in new_files:
-                file_path = os.path.join(PDF_DIRECTORY, filename)
-                
-                for page_number, text in self.process_large_file(file_path):
-                    if text:
-                        chunks = self.text_splitter.split_text(text)
-                        
-                        for chunk_number, chunk in enumerate(chunks):
-                            text_chunks.append({
-                                'text': chunk,
-                                'metadata': {
-                                    'filename': filename,
-                                    'page_number': page_number + 1,
-                                    'chunk_number': chunk_number + 1,
-                                }
-                            })
-        
-        return text_chunks
-
-    def get_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
-        """
-        Get embeddings for a batch of texts
-        Args:
-            texts: List of text strings
-        Returns:
-            List of embedding vectors
-        """
-        try:
-            response = self.openai_client.embeddings.create(
-                model="text-embedding-ada-002",
-                input=texts
+    def _setup_collection(self):
+        """Setup Qdrant collection if it doesn't exist"""
+        collections = self.qdrant_client.get_collections()
+        if not any(c.name == self.config.COLLECTION_NAME for c in collections.collections):
+            self.qdrant_client.create_collection(
+                collection_name=self.config.COLLECTION_NAME,
+                vectors_config=models.VectorParams(
+                    size=1536,
+                    distance=models.Distance.COSINE
+                )
             )
-            return [data.embedding for data in response.data]
-        except Exception as e:
-            print(f"Error getting embeddings: {str(e)}")
-            raise
 
-    def get_processed_files(self) -> set:
-        """
-        Get set of already processed files
-        Returns:
-            Set of processed filenames
-        """
+    def _get_processed_files(self) -> set:
+        """Get set of already processed files"""
         try:
-            if not self.qdrant_manager.vectors_exist():
-                return set()
-            
-            response = self.qdrant_manager.client.scroll(
-                collection_name=self.qdrant_manager.collection_name,
-                scroll_filter=None,
+            response = self.qdrant_client.scroll(
+                collection_name=self.config.COLLECTION_NAME,
                 limit=10000,
                 with_payload=['filename'],
                 with_vectors=False
@@ -112,56 +52,132 @@ class DocumentProcessor:
         except Exception:
             return set()
 
-    def process_documents(self) -> int:
-        """
-        Process documents with batch operations
-        Returns:
-            Number of processed chunks
-        """
+    def process_pdf(self, file_path: str) -> Generator[tuple, None, None]:
+        """Process a single PDF file"""
         try:
-            # Get processed and new files
-            processed_files = self.get_processed_files()
-            current_files = {f for f in os.listdir(PDF_DIRECTORY) if f.endswith('.pdf')}
-            new_files = current_files - processed_files
-            
-            if not new_files:
-                print("No new files to process")
-                return 0
-            
-            # Extract text chunks
-            text_chunks = self.extract_text_from_pdfs(new_files)
-            
-            # Process in batches
-            total_batches = (len(text_chunks) + BATCH_SIZE - 1) // BATCH_SIZE
-            print(f"Processing {len(text_chunks)} chunks in {total_batches} batches")
-            
-            for i in tqdm(range(0, len(text_chunks), BATCH_SIZE)):
-                batch = text_chunks[i:i + BATCH_SIZE]
-                texts = [chunk['text'] for chunk in batch]
-                
-                # Get embeddings for batch
-                embeddings = self.get_embeddings_batch(texts)
-                
-                # Add vectors to Qdrant
-                self.qdrant_manager.add_vectors(
-                    vectors=embeddings,
-                    metadata=[chunk['metadata'] for chunk in batch],
-                    texts=texts
-                )
-            
-            return len(text_chunks)
-        
+            reader = pypdf.PdfReader(file_path)
+            for page_number, page in enumerate(reader.pages):
+                text = page.extract_text()
+                if text.strip():  # Only yield if text is not empty
+                    yield page_number, text
         except Exception as e:
-            print(f"Error processing documents: {str(e)}")
+            print(f"Error processing PDF {file_path}: {str(e)}")
+            yield from []
+
+    def create_chunks(self, text: str, metadata: Dict) -> List[Dict]:
+        """Create chunks from text with metadata"""
+        chunks = self.text_splitter.split_text(text)
+        return [
+            {
+                'text': chunk,
+                'metadata': {
+                    'filename': metadata['filename'],
+                    'page_number': metadata['page_number'],
+                    'chunk_number': i + 1,
+                }
+            }
+            for i, chunk in enumerate(chunks)
+        ]
+
+    def get_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """Get embeddings for texts using OpenAI"""
+        try:
+            response = self.openai_client.embeddings.create(
+                model="text-embedding-ada-002",
+                input=texts
+            )
+            return [data.embedding for data in response.data]
+        except Exception as e:
+            print(f"Error generating embeddings: {str(e)}")
             raise
 
+    def store_vectors(self, vectors: List[List[float]], chunks: List[Dict]):
+        """Store vectors and metadata in Qdrant"""
+        try:
+            points = [
+                models.PointStruct(
+                    id=abs(hash(f"{chunk['metadata']['filename']}_{chunk['metadata']['page_number']}_{chunk['metadata']['chunk_number']}")) % (2**63),
+                    vector=vector,
+                    payload={
+                        'text': chunk['text'],
+                        'filename': chunk['metadata']['filename'],
+                        'page_number': chunk['metadata']['page_number'],
+                        'chunk_number': chunk['metadata']['chunk_number']
+                    }
+                )
+                for chunk, vector in zip(chunks, vectors)
+            ]
+            
+            self.qdrant_client.upsert(
+                collection_name=self.config.COLLECTION_NAME,
+                points=points
+            )
+        except Exception as e:
+            print(f"Error storing vectors: {str(e)}")
+            raise
+
+    def process_documents(self) -> int:
+        """Main processing function"""
+        # Get new files to process
+        processed_files = self._get_processed_files()
+        current_files = {f for f in os.listdir(self.config.PDF_DIRECTORY) 
+                        if f.endswith('.pdf')}
+        new_files = current_files - processed_files
+
+        if not new_files:
+            print("No new files to process")
+            return 0
+
+        total_chunks = []
+        total_processed = 0
+
+        # Process each file
+        for filename in tqdm(new_files, desc="Processing files"):
+            file_path = os.path.join(self.config.PDF_DIRECTORY, filename)
+            print(f"\nProcessing {filename}")
+            
+            # Process each page
+            for page_number, text in self.process_pdf(file_path):
+                if text:
+                    chunks = self.create_chunks(text, {
+                        'filename': filename,
+                        'page_number': page_number + 1
+                    })
+                    total_chunks.extend(chunks)
+
+                # Process in batches
+                if len(total_chunks) >= self.config.BATCH_SIZE:
+                    try:
+                        batch = total_chunks[:self.config.BATCH_SIZE]
+                        embeddings = self.get_embeddings([c['text'] for c in batch])
+                        self.store_vectors(embeddings, batch)
+                        total_processed += len(batch)
+                        total_chunks = total_chunks[self.config.BATCH_SIZE:]
+                        print(f"Processed {total_processed} chunks so far...")
+                    except Exception as e:
+                        print(f"Error processing batch: {str(e)}")
+                        continue
+
+        # Process remaining chunks
+        if total_chunks:
+            try:
+                embeddings = self.get_embeddings([c['text'] for c in total_chunks])
+                self.store_vectors(embeddings, total_chunks)
+                total_processed += len(total_chunks)
+            except Exception as e:
+                print(f"Error processing final batch: {str(e)}")
+
+        return total_processed
+
 def main():
+    from config import Config
+    processor = DocumentProcessor(Config)
     try:
-        processor = DocumentProcessor()
-        num_chunks = processor.process_documents()
-        print(f"Successfully processed and stored {num_chunks} chunks in Qdrant")
+        print("Starting document processing...")
+        num_processed = processor.process_documents()
+        print(f"Successfully processed {num_processed} chunks")
     except Exception as e:
-        print(f"Failed to process documents: {str(e)}")
+        print(f"Error processing documents: {str(e)}")
 
 if __name__ == "__main__":
     main()

@@ -9,26 +9,24 @@ load_dotenv()
 # OpenAI API configuration
 api_key = os.environ['OA_API']
 os.environ['OPENAI_API_KEY'] = api_key
-OPENAI_API_KEY = os.environ['OPENAI_API_KEY']
 
-if not OPENAI_API_KEY:
-    raise ValueError("OpenAI API key not found in environment variables")
 
-# Collection settings
-COLLECTION_NAME = "knowledge_base"
+class Config:
+    OPENAI_API_KEY = os.environ['OPENAI_API_KEY']
 
-# File paths
-PDF_DIRECTORY = "./data/pdfs/"
-LOCAL_QDRANT_PATH = "./local_qdrant"
+    # Collection settings
+    COLLECTION_NAME = "knowledge_base"
 
-# Search settings
-SEARCH_LIMIT = 5
-SIMILARITY_THRESHOLD = 0.7
+    # File paths
+    PDF_DIRECTORY = "./data/pdfs/"
+    LOCAL_QDRANT_PATH = "./local_qdrant"
 
-# Text processing settings
-CHUNK_SIZE = 1000
-CHUNK_OVERLAP = 200
+    # Search settings
+    SEARCH_LIMIT = 10
+    SIMILARITY_THRESHOLD = 0.7
 
-# Ensure required directories exist
-os.makedirs(PDF_DIRECTORY, exist_ok=True)
-os.makedirs(LOCAL_QDRANT_PATH, exist_ok=True)
+    # Text processing settings
+    CHUNK_SIZE = 1000
+    CHUNK_OVERLAP = 200
+    BATCH_SIZE = 8
+    TIMEOUT = 600.0

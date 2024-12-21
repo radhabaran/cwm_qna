@@ -136,11 +136,17 @@ class QdrantClientManager:
             Dictionary containing collection information
         """
         try:
-            info = self.client.get_collection(self.collection_name)
+            print("*** Debugging code : reaching get_collection_info method in qdrant_manager")
+
+            info = self.client.get_collection(collection_name=self.collection_name)
+
+            print("*** Debugging code : result received from collection in qdrant_manager", info)
+
             return {
-                'vectors_count': info.vectors_count,
+                'vectors_count': info.points_count,
                 'points_count': info.points_count,
-                'status': info.status
+                'status': info.status,
+                'indexed_vectors_count': info.indexed_vectors_count
             }
         except Exception as e:
             raise Exception(f"Failed to get collection info: {str(e)}")

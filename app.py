@@ -3,61 +3,45 @@
 import streamlit as st
 from typing import List, Dict
 from openai import OpenAI
-from config import (
-    OPENAI_API_KEY,
-    LOCAL_QDRANT_PATH,
-    SEARCH_LIMIT,
-    SIMILARITY_THRESHOLD
-)
-from qdrant_manager import QdrantClientManager
+from document_searcher import DocumentSearcher
+from config import Config
+
 
 class QASystem:
     def __init__(self):
-        """Initialize QA system with OpenAI client and QdrantClientManager"""
-        self.openai_client = OpenAI(api_key=OPENAI_API_KEY, timeout=60.0)
-        self.qdrant_manager = QdrantClientManager(path=LOCAL_QDRANT_PATH)
+        """Initialize QA system with OpenAI client"""
+        self.openai_client = OpenAI(api_key=Config.OPENAI_API_KEY)
+        """Initialize QA system with DocumentSearcher"""
+        self.searcher = DocumentSearcher(Config)
     
+
     def get_embedding(self, text: str) -> List[float]:
-        """
-        Get embedding for a single text
-        Args:
-            text: Input text to embed
-        Returns:
-            List of embedding values
-        """
+        """Get embedding for a single text"""
         try:
-            response = self.openai_client.embeddings.create(
-                model="text-embedding-ada-002",
-                input=[text]
-            )
-            return response.data[0].embedding
+            return self.searcher.get_embedding(text)
         except Exception as e:
             st.error(f"Error generating embedding: {str(e)}")
             raise
     
+
     def search_similar_chunks(self, query: str) -> List[Dict]:
-        """
-        Search for similar text chunks
-        Args:
-            query: Search query text
-        Returns:
-            List of similar text chunks with metadata
-        """
+        """Search for similar text chunks"""
         try:
-            query_vector = self.get_embedding(query)
-            return self.qdrant_manager.search(
-                query_vector=query_vector,
-                limit=SEARCH_LIMIT,
-                score_threshold=SIMILARITY_THRESHOLD
+            return self.searcher.search(
+                query=query,
+                limit=Config.SEARCH_LIMIT,
+                score_threshold=Config.SIMILARITY_THRESHOLD
             )
         except Exception as e:
             st.error(f"Error searching database: {str(e)}")
             raise
 
+
 def initialize_session_state():
     """Initialize session state variables"""
     if 'qa_system' not in st.session_state:
         st.session_state.qa_system = QASystem()
+
 
 def display_results(results):
     """
@@ -82,6 +66,7 @@ def display_results(results):
             > {result.payload['text']}
             """)
 
+
 def main():
     # Page configuration
     st.set_page_config(
@@ -100,7 +85,7 @@ def main():
     
     # System status check
     try:
-        collection_info = st.session_state.qa_system.qdrant_manager.get_collection_info()
+        collection_info = st.session_state.qa_system.searcher.get_collection_info()
         vectors_count = collection_info['vectors_count']
         
         if vectors_count == 0:
