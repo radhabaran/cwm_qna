@@ -4,6 +4,7 @@ from typing import List, Dict
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from openai import OpenAI
+import re
 
 
 class DocumentSearcher:
@@ -23,6 +24,28 @@ class DocumentSearcher:
         return response.data[0].embedding
     
 
+    def is_valid_content(self, text: str) -> bool:
+        """Filter out metadata, headers, and navigational content"""
+        if len(text.strip()) < 50:  # Minimum 50 characters
+            return False
+            
+        metadata_patterns = [
+            r"^The Mother taking a class",
+            r"^Page \d+$",
+            r"^Chapter \d+$",
+            r"^\d{1,2}/\d{1,2}/\d{4}$",
+            r"^Table of Contents$",
+            r"^Questions and Answers$",
+            r"^[\d\s\-—]*$",  # Just numbers, spaces, dashes
+            r"^\s*\(.*\)\s*$"  # Just parenthetical content
+        ]
+        
+        for pattern in metadata_patterns:
+            if re.match(pattern, text.strip()):
+                return False
+                
+        return True
+
     def search(self, query: str, limit: int = None, score_threshold: float = None) -> List[Dict]:
         """Search for similar text chunks"""
         query_vector = self.get_embedding(query)
@@ -30,10 +53,19 @@ class DocumentSearcher:
         results = self.qdrant_client.search(
             collection_name=self.config.COLLECTION_NAME,
             query_vector=query_vector,
-            limit=limit or self.config.SEARCH_LIMIT,
+            # limit=limit or self.config.SEARCH_LIMIT,
+            limit=(limit or self.config.SEARCH_LIMIT) * 2,  # Get more results to account for filtering
             score_threshold=score_threshold or self.config.SIMILARITY_THRESHOLD
         )
-        return results
+
+        # Filter out invalid content
+        filtered_results = [
+            result for result in results 
+            if self.is_valid_content(result.payload['text'])
+        ]
+
+        # Return only up to the requested limit
+        return filtered_results[:limit or self.config.SEARCH_LIMIT]
 
 
     def get_collection_info(self) -> Dict:

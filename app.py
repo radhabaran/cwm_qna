@@ -10,7 +10,7 @@ from config import Config
 class QASystem:
     def __init__(self):
         """Initialize QA system with OpenAI client"""
-        self.model = OpenAI(api_key=Config.OPENAI_API_KEY, model="gpt-3.5-turbo")
+        self.client = OpenAI(api_key=Config.OPENAI_API_KEY)
         """Initialize QA system with DocumentSearcher"""
         self.searcher = DocumentSearcher(Config)
     
@@ -30,31 +30,39 @@ class QASystem:
             for result in context
         ])
 
-        # Prepare the prompt
-        prompt = f"""You are a knowledgeable spiritual assistant helping users understand The Mother's
-collected works. Here the Mother is the Mother from Sri Aurobindo Ashram from Pondicherry. Use the following
-context to answer the question. If you cannot answer the question based on the context, say so. 
+        messages = [
+            {
+                "role": "system", 
+                "content": """You are a knowledgeable spiritual assistant specialized in The Mother's works from Sri Aurobindo Ashram, Pondicherry.
+Your task is to answer questions using only the provided context. If you cannot answer based on the context, say so clearly.
 Always cite the source document and page number when providing information.
 
-Context:
-{context_str}
+Important formatting instructions:
+1. Maintain the original paragraph structure from the source text
+2. Add line breaks between paragraphs
+3. Present quotes exactly as they appear in the original text
+4. Start your response with the source citation in a separate line
+5. When merging multiple passages, separate them clearly with source citations
+"""
+            },
+            {
+                "role": "user",
+                "content": f"""Context:
+                {context_str}
 
-Question: {query}
-
-Please provide a clear and concise answer based on the above context."""
-
-        messages = [
-            {"role": "system", "content": "You are a knowledgeable spiritual assistant specialized in The Mother's works."},
-            {"role": "user", "content": prompt}
+                Question: {query}"""
+            }
         ]
 
         try:
-            response = self.model.invoke(
-                input=messages,
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=messages,
                 temperature=0.7,
                 max_tokens=1000
             )
             return response.choices[0].message.content, context
+        
         except Exception as e:
             st.error(f"Error generating response: {str(e)}")
             raise
@@ -95,25 +103,71 @@ def display_results(results, response=None):
         results: List of search results
         response: Optional AI response to display
     """
-    if response:
-        st.subheader("AI Response")
-        st.write(response)
 
-    st.subheader("Supporting Passages")
-    
-    for i, result in enumerate(results, 1):
-        similarity_score = result.score
+    if not results:  # Handle case where all results were filtered out
+        st.info("No valid results found after filtering. Try rephrasing your question.")
+        return
+
+    if response:
+        st.markdown("## AI Response")
         
-        with st.expander(
-            f"Source {i} (Relevance: {similarity_score:.2%})", 
-            expanded=i==1
-        ):
-            st.markdown(f"""
-            📄 **Source Document:** {result.payload['filename']}  
-            📝 **Page Number:** {result.payload['page_number']}  
+        # Group results by document and page for primary citation
+        primary_result = results[0]
+        st.markdown(f"***From {primary_result.payload['filename']}, Page {primary_result.payload['page_number']}***")
+        st.markdown(f"\"{primary_result.payload['text']}\"")
+
+    if len(results) <= 1:  # No additional results to show
+        return
+
+    st.markdown("## Additional Relevant Passages")
+    
+    # Group results by document
+    grouped_results = {}
+    for result in results[1:]:  # Skip first result as it's shown above
+        doc_key = result.payload['filename']
+        if doc_key not in grouped_results:
+            grouped_results[doc_key] = []
+        grouped_results[doc_key].append(result)
+
+    # Display grouped results
+    for doc_name, doc_results in grouped_results.items():
+        # Sort results by page number
+        doc_results.sort(key=lambda x: x.payload['page_number'])
+        
+        # Group consecutive pages
+        current_group = []
+        current_pages = []
+        last_page = None
+        
+        for result in doc_results:
+            page_num = result.payload['page_number']
             
-            > {result.payload['text']}
-            """)
+            if last_page is not None and page_num != last_page + 1:
+                # Display current group
+                if current_group:
+                    pages_str = f"Page{' ' if len(current_pages) == 1 else 's '}{', '.join(map(str, current_pages))}"
+                    with st.expander(
+                        f"***From {doc_name}, {pages_str}*** [▾ {current_group[0].score:.0%} relevance]", 
+                        expanded=False
+                    ):
+                        for text in current_group:
+                            st.markdown(f"\"{text.payload['text']}\"")
+                current_group = []
+                current_pages = []
+            
+            current_group.append(result)
+            current_pages.append(page_num)
+            last_page = page_num
+        
+        # Display last group
+        if current_group:
+            pages_str = f"Page{' ' if len(current_pages) == 1 else 's '}{', '.join(map(str, current_pages))}"
+            with st.expander(
+                f"***From {doc_name}, {pages_str}*** [▾ {current_group[0].score:.0%} relevance]", 
+                expanded=False
+            ):
+                for text in current_group:
+                    st.markdown(f"\"{text.payload['text']}\"")
 
 
 def main():
@@ -127,7 +181,7 @@ def main():
     initialize_session_state()
     
     # Header
-    st.title("🔍 Fromm the Collected Works of The Mother")
+    st.title("🔍 From the Collected Works of The Mother")
     st.markdown("""
     Ask questions about The Mother's works and get AI-powered answers with relevant passages.
     """)
