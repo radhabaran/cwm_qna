@@ -60,7 +60,7 @@ class DocumentSearcher:
                 return False
                 
         return True
-        
+
 
     def search(self, query: str, limit: int = None, score_threshold: float = None) -> List[Dict]:
         """Search for similar text chunks"""
@@ -79,7 +79,7 @@ class DocumentSearcher:
         for result in results:
             if self.is_valid_content(result.payload['text'], query):
                 # Clean the text before adding to results
-                text = self.clean_text(result.payload['text']))
+                text = self.clean_text(result.payload['text'])
             
                 # Add page header if available
                 if result.payload.get('page_header'):

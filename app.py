@@ -9,9 +9,8 @@ from config import Config
 
 class QASystem:
     def __init__(self):
-        """Initialize QA system with OpenAI client"""
+    
         self.client = OpenAI(api_key=Config.OPENAI_API_KEY)
-        """Initialize QA system with DocumentSearcher"""
         self.searcher = DocumentSearcher(Config)
     
 
@@ -136,7 +135,7 @@ def display_results(results, response=None):
     if len(results) <= 1:  # No additional results to show
         return
 
-    st.markdown("## Additional Relevant Passages")
+    st.markdown("### Additional Relevant Passages")
     
     # Group results by document
     grouped_results = {}
@@ -220,7 +219,7 @@ def main():
             st.warning("⚠️ No documents have been processed yet. Please process documents first.")
             return
         
-        st.success(f"📚 System ready with {vectors_count:,} indexed text passages")
+        # st.success(f"📚 System ready with {vectors_count:,} indexed text passages")
         
     except Exception as e:
         st.error(f"❌ System Error: Could not connect to the database. {str(e)}")
