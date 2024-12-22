@@ -9,6 +9,7 @@ from tqdm import tqdm
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 
+
 class DocumentProcessor:
     def __init__(self, config):
         """Initialize document processor with all necessary components"""
@@ -18,7 +19,8 @@ class DocumentProcessor:
         # Initialize Qdrant client
         self.qdrant_client = QdrantClient(path=config.LOCAL_QDRANT_PATH)
         self._setup_collection()
-        
+
+
         # Text splitter for chunking
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=config.CHUNK_SIZE,
@@ -26,6 +28,7 @@ class DocumentProcessor:
             length_function=len,
             separators=["\n\n", "\n", ".", " ", ""]
         )
+
 
     def _setup_collection(self):
         """Setup Qdrant collection if it doesn't exist"""
@@ -38,6 +41,7 @@ class DocumentProcessor:
                     distance=models.Distance.COSINE
                 )
             )
+
 
     def _get_processed_files(self) -> set:
         """Get set of already processed files"""
@@ -52,6 +56,7 @@ class DocumentProcessor:
         except Exception:
             return set()
 
+
     def process_pdf(self, file_path: str) -> Generator[tuple, None, None]:
         """Process a single PDF file"""
         try:
@@ -63,6 +68,7 @@ class DocumentProcessor:
         except Exception as e:
             print(f"Error processing PDF {file_path}: {str(e)}")
             yield from []
+
 
     def create_chunks(self, text: str, metadata: Dict) -> List[Dict]:
         """Create chunks from text with metadata"""
@@ -79,6 +85,7 @@ class DocumentProcessor:
             for i, chunk in enumerate(chunks)
         ]
 
+
     def get_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Get embeddings for texts using OpenAI"""
         try:
@@ -90,6 +97,7 @@ class DocumentProcessor:
         except Exception as e:
             print(f"Error generating embeddings: {str(e)}")
             raise
+
 
     def store_vectors(self, vectors: List[List[float]], chunks: List[Dict]):
         """Store vectors and metadata in Qdrant"""
@@ -115,6 +123,7 @@ class DocumentProcessor:
         except Exception as e:
             print(f"Error storing vectors: {str(e)}")
             raise
+
 
     def process_documents(self) -> int:
         """Main processing function"""
@@ -168,6 +177,7 @@ class DocumentProcessor:
                 print(f"Error processing final batch: {str(e)}")
 
         return total_processed
+
 
 def main():
     from config import Config
