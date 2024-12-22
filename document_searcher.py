@@ -24,8 +24,19 @@ class DocumentSearcher:
         return response.data[0].embedding
     
 
-    def is_valid_content(self, text: str) -> bool:
+    def clean_text(self, text: str) -> str:
+        """Clean text by removing trailing numbers"""
+        return re.sub(r'\s*\d+\s*$', '', text.strip())
+
+
+    def is_valid_content(self, text: str, query: str) -> bool:
         """Filter out metadata, headers, and navigational content"""
+
+        # Only apply Mother-specific filtering if the query is about The Mother
+        if ('mother' in query.lower() or 'The Mother' in query) and 'mother' in text.lower():
+            if 'The Mother' not in text:
+                return False
+
         if len(text.strip()) < 50:  # Minimum 50 characters
             return False
             
@@ -40,11 +51,16 @@ class DocumentSearcher:
             r"^\s*\(.*\)\s*$"  # Just parenthetical content
         ]
         
+        # Skip metadata pattern checking if this is the page header
+        if 'page_header' in text:
+            return True
+
         for pattern in metadata_patterns:
             if re.match(pattern, text.strip()):
                 return False
                 
         return True
+        
 
     def search(self, query: str, limit: int = None, score_threshold: float = None) -> List[Dict]:
         """Search for similar text chunks"""
@@ -58,11 +74,19 @@ class DocumentSearcher:
             score_threshold=score_threshold or self.config.SIMILARITY_THRESHOLD
         )
 
-        # Filter out invalid content
-        filtered_results = [
-            result for result in results 
-            if self.is_valid_content(result.payload['text'])
-        ]
+        # Filter out invalid content and clean text
+        filtered_results = []
+        for result in results:
+            if self.is_valid_content(result.payload['text'], query):
+                # Clean the text before adding to results
+                text = self.clean_text(result.payload['text']))
+            
+                # Add page header if available
+                if result.payload.get('page_header'):
+                    text = f"**{result.payload['page_header']}**\n\n{text}"
+
+                result.payload['text'] = text
+                filtered_results.append(result)
 
         # Return only up to the requested limit
         return filtered_results[:limit or self.config.SEARCH_LIMIT]

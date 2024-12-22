@@ -64,7 +64,12 @@ class DocumentProcessor:
             for page_number, page in enumerate(reader.pages):
                 text = page.extract_text()
                 if text.strip():  # Only yield if text is not empty
-                    yield page_number, text
+                    # Extract page header (first line)
+                    lines = text.strip().split('\n', 1)
+                    page_header = lines[0].strip() if len(lines) > 1 else ""
+                    main_text = lines[1].strip() if len(lines) > 1 else lines[0].strip()
+                    yield page_number, main_text, page_header
+
         except Exception as e:
             print(f"Error processing PDF {file_path}: {str(e)}")
             yield from []
@@ -80,6 +85,7 @@ class DocumentProcessor:
                     'filename': metadata['filename'],
                     'page_number': metadata['page_number'],
                     'chunk_number': i + 1,
+                    'page_header': metadata['page_header']
                 }
             }
             for i, chunk in enumerate(chunks)
@@ -110,7 +116,8 @@ class DocumentProcessor:
                         'text': chunk['text'],
                         'filename': chunk['metadata']['filename'],
                         'page_number': chunk['metadata']['page_number'],
-                        'chunk_number': chunk['metadata']['chunk_number']
+                        'chunk_number': chunk['metadata']['chunk_number'],
+                        'page_header': chunk['metadata']['page_header']
                     }
                 )
                 for chunk, vector in zip(chunks, vectors)
@@ -146,11 +153,12 @@ class DocumentProcessor:
             print(f"\nProcessing {filename}")
             
             # Process each page
-            for page_number, text in self.process_pdf(file_path):
+            for page_number, text, page_header in self.process_pdf(file_path):
                 if text:
                     chunks = self.create_chunks(text, {
                         'filename': filename,
-                        'page_number': page_number + 1
+                        'page_number': page_number + 1,
+                        'page_header': page_header
                     })
                     total_chunks.extend(chunks)
 

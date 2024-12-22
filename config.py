@@ -29,4 +29,4 @@ class Config:
     CHUNK_SIZE = 1000
     CHUNK_OVERLAP = 200
     BATCH_SIZE = 8
-    TIMEOUT = 600.0
+    TIMEOUT = 1800.0

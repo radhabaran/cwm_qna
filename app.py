@@ -26,23 +26,36 @@ class QASystem:
         """
         # Prepare context string
         context_str = "\n\n".join([
-            f"From '{result.payload['filename']}' (Page {result.payload['page_number']}):\n{result.payload['text']}"
+            f"From '{result.payload['filename']}' (Page {result.payload['page_number']}" + 
+            (f" - {result.payload['page_header']}" if result.payload.get('page_header') else "") + 
+            f"):\n{result.payload['text']}"
             for result in context
         ])
 
         messages = [
             {
                 "role": "system", 
-                "content": """You are a knowledgeable spiritual assistant specialized in The Mother's works from Sri Aurobindo Ashram, Pondicherry.
-Your task is to answer questions using only the provided context. If you cannot answer based on the context, say so clearly.
-Always cite the source document and page number when providing information.
+                "content": """You are a knowledgeable spiritual assistant specialized in 
+The Mother's works from Sri Aurobindo Ashram, Pondicherry.
 
-Important formatting instructions:
-1. Maintain the original paragraph structure from the source text
-2. Add line breaks between paragraphs
-3. Present quotes exactly as they appear in the original text
-4. Start your response with the source citation in a separate line
+Your task is to answer questions using only the provided context while following these strict rules:
+
+1. Only use conexts where "The Mother" refers specifically to The Mother of Sri Aurobindo Ashram (Mirra Alfassa)
+2. Discard any context passages that refer to biological mothers, maternal relationships, or general mother references
+3. If a context uses "mother" in lowercase or discusses parent-child relationships, it should be excluded
+4. The context must specifically contain The Mother's teachings, writings, or direct quotations from her works
+5. If the provided context doesn't contain relevant information from The Mother's works, clearly state that
+
+When citing sources:
+1. Start your response with the source citation in a separate line
+2. Maintain the original paragraph structure from the source text
+3. Add line breaks between paragraphs
+4. Present quotes exactly as they appear in the original text
 5. When merging multiple passages, separate them clearly with source citations
+
+Remember: "The Mother" in this context exclusively refers to 
+Mirra Alfassa (The Mother of Sri Aurobindo Ashram, Pondicherry), who is the author of the 
+collected works we are referencing.
 """
             },
             {
@@ -113,7 +126,11 @@ def display_results(results, response=None):
         
         # Group results by document and page for primary citation
         primary_result = results[0]
-        st.markdown(f"***From {primary_result.payload['filename']}, Page {primary_result.payload['page_number']}***")
+        citation = f"***From {primary_result.payload['filename']}, Page {primary_result.payload['page_number']}"
+        if primary_result.payload.get('page_header'):
+            citation += f" - {primary_result.payload['page_header']}"
+        citation += "***"
+        st.markdown(citation)
         st.markdown(f"\"{primary_result.payload['text']}\"")
 
     if len(results) <= 1:  # No additional results to show
@@ -146,12 +163,17 @@ def display_results(results, response=None):
                 # Display current group
                 if current_group:
                     pages_str = f"Page{' ' if len(current_pages) == 1 else 's '}{', '.join(map(str, current_pages))}"
-                    with st.expander(
-                        f"***From {doc_name}, {pages_str}*** [▾ {current_group[0].score:.0%} relevance]", 
-                        expanded=False
-                    ):
+
+                    # Include page header in expander title if available
+                    title = f"***From {doc_name}, {pages_str}"
+                    if current_group[0].payload.get('page_header'):
+                        title += f" - {current_group[0].payload['page_header']}"
+                    title += f"*** [▾ {current_group[0].score:.0%} relevance]"
+
+                    with st.expander(title, expanded=False):
                         for text in current_group:
                             st.markdown(f"\"{text.payload['text']}\"")
+
                 current_group = []
                 current_pages = []
             
@@ -162,10 +184,13 @@ def display_results(results, response=None):
         # Display last group
         if current_group:
             pages_str = f"Page{' ' if len(current_pages) == 1 else 's '}{', '.join(map(str, current_pages))}"
-            with st.expander(
-                f"***From {doc_name}, {pages_str}*** [▾ {current_group[0].score:.0%} relevance]", 
-                expanded=False
-            ):
+            # Include page header in expander title if available
+            title = f"***From {doc_name}, {pages_str}"
+            if current_group[0].payload.get('page_header'):
+                title += f" - {current_group[0].payload['page_header']}"
+            title += f"*** [▾ {current_group[0].score:.0%} relevance]"
+            
+            with st.expander(title, expanded=False):
                 for text in current_group:
                     st.markdown(f"\"{text.payload['text']}\"")
 
