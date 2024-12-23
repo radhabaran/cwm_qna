@@ -25,8 +25,13 @@ class DocumentSearcher:
     
 
     def clean_text(self, text: str) -> str:
-        """Clean text by removing trailing numbers"""
-        return re.sub(r'\s*\d+\s*$', '', text.strip())
+        """Clean text by removing trailing numbers and extra whitespace"""
+        # Remove trailing numbers and clean whitespace
+        text = text.strip()
+        text = re.sub(r'\s*\d+\s*$', '', text)
+        # Remove multiple newlines
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        return text
 
 
     def is_valid_content(self, text: str, query: str) -> bool:
@@ -52,7 +57,7 @@ class DocumentSearcher:
         ]
         
         # Skip metadata pattern checking if this is the page header
-        if 'page_header' in text:
+        if isinstance(text, dict) and 'page_header' in text:
             return True
 
         for pattern in metadata_patterns:
@@ -61,7 +66,7 @@ class DocumentSearcher:
                 
         return True
 
-
+        
     def search(self, query: str, limit: int = None, score_threshold: float = None) -> List[Dict]:
         """Search for similar text chunks"""
         query_vector = self.get_embedding(query)
@@ -78,16 +83,38 @@ class DocumentSearcher:
         filtered_results = []
         for result in results:
             if self.is_valid_content(result.payload['text'], query):
-                # Clean the text before adding to results
+                # Clean and format the text
                 text = self.clean_text(result.payload['text'])
             
-                # Add page header if available
+                # Format the result as a dictionary
+                clean_result = {
+                    'filename': result.payload['filename'],
+                    'page_number': result.payload['page_number'],
+                    'score': result.score
+                }
+                # Build the formatted result
+                formatted_parts = []
+
+                # Format citation and text
+                citation = f"From {result.payload['filename']}, Page {result.payload['page_number']}\n\n"
+                formatted_parts.append(citation)
+
+                # Add header if available
                 if result.payload.get('page_header'):
-                    text = f"**{result.payload['page_header']}**\n\n{text}"
+                    header = result.payload['page_header'].strip().strip('"')
+                    # Remove header from text if it appears at the start
+                    if text.startswith(header):
+                        text = text[len(header):].strip()
+                    formatted_parts.append(header)
 
-                result.payload['text'] = text
-                filtered_results.append(result)
-
+                # Add main text
+                formatted_parts.append(text)
+                
+                # Join all parts with double newlines and store in result
+                clean_result['text'] = '\n\n'.join(part for part in formatted_parts if part)
+            
+                filtered_results.append(clean_result)
+                
         # Return only up to the requested limit
         return filtered_results[:limit or self.config.SEARCH_LIMIT]
 
