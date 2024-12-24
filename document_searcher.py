@@ -1,6 +1,6 @@
 # document_searcher.py
 
-from typing import List, Dict
+from typing import List, Dict, Any
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from openai import OpenAI
@@ -38,11 +38,14 @@ class DocumentSearcher:
         """Filter out metadata, headers, and navigational content"""
 
         # Only apply Mother-specific filtering if the query is about The Mother
-        if ('mother' in query.lower() or 'The Mother' in query) and 'mother' in text.lower():
-            if 'The Mother' not in text:
-                return False
+        # if ('mother' in query.lower() or 'The Mother' in query) and 'mother' in text.lower():
+        #     if 'The Mother' not in text:
+        #         return False
 
-        if len(text.strip()) < 50:  # Minimum 50 characters
+        if ('mother' in query.lower() or 'The Mother' in query) and 'mother' in text:
+            return False
+
+        if len(text.strip()) < 100:  # Minimum 50 characters
             return False
             
         metadata_patterns = [
@@ -57,8 +60,8 @@ class DocumentSearcher:
         ]
         
         # Skip metadata pattern checking if this is the page header
-        if isinstance(text, dict) and 'page_header' in text:
-            return True
+        # if isinstance(text, dict) and 'page_header' in text:
+        #     return True
 
         for pattern in metadata_patterns:
             if re.match(pattern, text.strip()):
@@ -70,51 +73,41 @@ class DocumentSearcher:
     def search(self, query: str, limit: int = None, score_threshold: float = None) -> List[Dict]:
         """Search for similar text chunks"""
         query_vector = self.get_embedding(query)
-        
+    
         results = self.qdrant_client.search(
             collection_name=self.config.COLLECTION_NAME,
             query_vector=query_vector,
-            # limit=limit or self.config.SEARCH_LIMIT,
-            limit=(limit or self.config.SEARCH_LIMIT) * 2,  # Get more results to account for filtering
+            limit=(limit or self.config.SEARCH_LIMIT) * 2,
             score_threshold=score_threshold or self.config.SIMILARITY_THRESHOLD
         )
 
         # Filter out invalid content and clean text
         filtered_results = []
+
         for result in results:
-            if self.is_valid_content(result.payload['text'], query):
-                # Clean and format the text
-                text = self.clean_text(result.payload['text'])
-            
-                # Format the result as a dictionary
-                clean_result = {
-                    'filename': result.payload['filename'],
-                    'page_number': result.payload['page_number'],
-                    'score': result.score
-                }
-                # Build the formatted result
-                formatted_parts = []
-
-                # Format citation and text
-                citation = f"From {result.payload['filename']}, Page {result.payload['page_number']}\n\n"
-                formatted_parts.append(citation)
-
-                # Add header if available
-                if result.payload.get('page_header'):
-                    header = result.payload['page_header'].strip().strip('"')
-                    # Remove header from text if it appears at the start
-                    if text.startswith(header):
-                        text = text[len(header):].strip()
-                    formatted_parts.append(header)
-
-                # Add main text
-                formatted_parts.append(text)
+            try:
+                if self.is_valid_content(result.payload['text'], query):
+                    # Clean the text
+                    cleaned_text = self.clean_text(result.payload['text'])
                 
-                # Join all parts with double newlines and store in result
-                clean_result['text'] = '\n\n'.join(part for part in formatted_parts if part)
-            
-                filtered_results.append(clean_result)
+                    # Remove hyphenations (words split across lines)
+                    cleaned_text = re.sub(r'(\w+)-\n(\w+)', r'\1\2', cleaned_text)
                 
+                    # Create a dictionary with the required structure
+                    filtered_result = {
+                        'filename': result.payload['filename'],
+                        'page_number': result.payload['page_number'],
+                        'page_header': result.payload.get('page_header', '').strip(),
+                        'text': cleaned_text,
+                        'score': result.score
+                    }
+
+                    filtered_results.append(filtered_result)
+                
+            except Exception as e:
+                print(f"Error processing result: {str(e)}")
+                continue
+            
         # Return only up to the requested limit
         return filtered_results[:limit or self.config.SEARCH_LIMIT]
 

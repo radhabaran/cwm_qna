@@ -25,9 +25,9 @@ class QASystem:
         """
         # Prepare context string
         context_str = "\n\n".join([
-            f"From '{result.payload['filename']}' (Page {result.payload['page_number']}" + 
-            (f" - {result.payload['page_header']}" if result.payload.get('page_header') else "") + 
-            f"):\n{result.payload['text']}"
+            f"Source: {result['filename']}, Page {result['page_number']}\n" +
+            f"{result['page_header']}\n" +
+            f"\"{result['text']}\""
             for result in context
         ])
 
@@ -37,24 +37,32 @@ class QASystem:
                 "content": """You are a knowledgeable spiritual assistant specialized in 
 The Mother's works from Sri Aurobindo Ashram, Pondicherry.
 
-Your task is to answer questions using only the provided context while following these strict rules:
+Your response must ALWAYS follow this EXACT format:
 
-1. Only use conexts where "The Mother" refers specifically to The Mother of Sri Aurobindo Ashram (Mirra Alfassa)
-2. Discard any context passages that refer to biological mothers, maternal relationships, or general mother references
-3. If a context uses "mother" in lowercase or discusses parent-child relationships, it should be excluded
-4. The context must specifically contain The Mother's teachings, writings, or direct quotations from her works
-5. If the provided context doesn't contain relevant information from The Mother's works, clearly state that
+Source: [filename], Page [page_number]
+[page_header]
+"[text]"
 
-When citing sources:
-1. Start your response with the source citation in a separate line
-2. Maintain the original paragraph structure from the source text
-3. Add line breaks between paragraphs
-4. Present quotes exactly as they appear in the original text
-5. When merging multiple passages, separate them clearly with source citations
+Where:
+- filename: use the exact filename from context
+- page_number: use the exact page number from context
+- page_header: use the exact page header from context
+- text: use the exact text from context
 
-Remember: "The Mother" in this context exclusively refers to 
-Mirra Alfassa (The Mother of Sri Aurobindo Ashram, Pondicherry), who is the author of the 
-collected works we are referencing.
+Rules:
+1. Start DIRECTLY with the source citation - no introduction or explanation
+2. Present quotes exactly as they appear in the original text
+3. Maintain original paragraph structure and formatting
+4. If using multiple quotes, separate them with blank lines
+5. Do not add any additional commentary or text
+
+EXAMPLE OF CORRECT FORMAT:
+
+Source: Words of The Mother-I, Page 123
+Words of the Mother – I
+"[Exact quote from the source document]"
+
+Remember: Only use content where "The Mother" refers to Mirra Alfassa of Sri Aurobindo Ashram
 """
             },
             {
@@ -122,15 +130,18 @@ def display_results(results, response=None):
 
     if response:
         st.markdown("## AI Response")
+        print("#### \n\nDebugging: response from llm : ", response)
         
         # Group results by document and page for primary citation
         primary_result = results[0]
-        citation = f"***From {primary_result.payload['filename']}, Page {primary_result.payload['page_number']}"
-        if primary_result.payload.get('page_header'):
-            citation += f" - {primary_result.payload['page_header']}"
-        citation += "***"
-        st.markdown(citation)
-        st.markdown(f"\"{primary_result.payload['text']}\"")
+
+
+        st.markdown(f"**Source: {primary_result['filename']}, Page {primary_result['page_number']}**")
+
+        if primary_result.get('page_header'):
+            st.markdown(f"**{primary_result['page_header']}**")
+
+        st.markdown(f"\"...{primary_result['text']}...\"")
 
     if len(results) <= 1:  # No additional results to show
         return
@@ -140,7 +151,7 @@ def display_results(results, response=None):
     # Group results by document
     grouped_results = {}
     for result in results[1:]:  # Skip first result as it's shown above
-        doc_key = result.payload['filename']
+        doc_key = result['filename']
         if doc_key not in grouped_results:
             grouped_results[doc_key] = []
         grouped_results[doc_key].append(result)
@@ -148,7 +159,7 @@ def display_results(results, response=None):
     # Display grouped results
     for doc_name, doc_results in grouped_results.items():
         # Sort results by page number
-        doc_results.sort(key=lambda x: x.payload['page_number'])
+        doc_results.sort(key=lambda x: x['page_number'])
         
         # Group consecutive pages
         current_group = []
@@ -156,22 +167,24 @@ def display_results(results, response=None):
         last_page = None
         
         for result in doc_results:
-            page_num = result.payload['page_number']
+            page_num = result['page_number']
             
             if last_page is not None and page_num != last_page + 1:
-                # Display current group
                 if current_group:
                     pages_str = f"Page{' ' if len(current_pages) == 1 else 's '}{', '.join(map(str, current_pages))}"
 
-                    # Include page header in expander title if available
-                    title = f"***From {doc_name}, {pages_str}"
-                    if current_group[0].payload.get('page_header'):
-                        title += f" - {current_group[0].payload['page_header']}"
-                    title += f"*** [▾ {current_group[0].score:.0%} relevance]"
+                    title = f"__Source: {doc_name}, {pages_str}__"
+
+                    if current_group[0].get('page_header'):
+                        title += f" [▾ {current_group[0]['score']:.0%} relevance]"
+                    else:
+                        title += f" [▾ {current_group[0]['score']:.0%} relevance]"
 
                     with st.expander(title, expanded=False):
                         for text in current_group:
-                            st.markdown(f"\"{text.payload['text']}\"")
+                            if text.get('page_header'):
+                                st.markdown(f"__{text['page_header']}__")
+                                st.markdown(f"\"...{text['text']}...\"")
 
                 current_group = []
                 current_pages = []
@@ -180,18 +193,22 @@ def display_results(results, response=None):
             current_pages.append(page_num)
             last_page = page_num
         
-        # Display last group
+
         if current_group:
             pages_str = f"Page{' ' if len(current_pages) == 1 else 's '}{', '.join(map(str, current_pages))}"
-            # Include page header in expander title if available
-            title = f"***From {doc_name}, {pages_str}"
-            if current_group[0].payload.get('page_header'):
-                title += f" - {current_group[0].payload['page_header']}"
-            title += f"*** [▾ {current_group[0].score:.0%} relevance]"
-            
-            with st.expander(title, expanded=False):
-                for text in current_group:
-                    st.markdown(f"\"{text.payload['text']}\"")
+    
+            # Format title using Source: format
+            title = f"__Source: {doc_name}, {pages_str}__"
+            if current_group[0].get('page_header'):
+                title += f" [▾ {current_group[0]['score']:.0%} relevance]"
+            else:
+                title += f" [▾ {current_group[0]['score']:.0%} relevance]"
+    
+        with st.expander(title, expanded=False):
+            for text in current_group:
+                if text.get('page_header'):
+                    st.markdown(f"__{text['page_header']}__")
+                st.markdown(f"\"...{text['text']}...\"")
 
 
 def main():
